@@ -175,10 +175,59 @@ function registerAllTools() {
       try {
         const messages = normalizeMessageList(args.messages);
         if (!messages.length) return err('消息内容为空');
-        const result = await ctx.sender.sendTextBatch(ctx.chatKey, messages, {
+        const sendOptions = {
           replyToMessageId: args.replyToMessageId ?? null,
           atUserId: args.atUserId ?? null
-        });
+        };
+
+        // 允许确定性插件在真正进入 SendQueue 前接管文本发送，例如按群缓存、
+        // 合并并延迟发送。插件返回 handled=true 时，下面的原始发送路径不再执行；
+        // 未安装、未启用或未接管时保持原有行为。
+        let policyResult = null;
+        for (const provider of skillManager.getCapabilityProviders('message.send-policy', {
+          chatKey: ctx.chatKey,
+          kind: ctx.kind,
+          chatId: ctx.chatId
+        })) {
+          try {
+            const candidate = await provider.fn({
+              chatKey: ctx.chatKey,
+              kind: ctx.kind,
+              chatId: ctx.chatId,
+              selfId: ctx.selfId,
+              triggerEntries: ctx.triggerEntries || [],
+              messages,
+              options: sendOptions,
+              // 只暴露当前会话绑定的发送入口。插件不能借此改变目标会话。
+              send: (batch, options = {}) => ctx.sender.sendTextBatch(ctx.chatKey, batch, options)
+            });
+            if (candidate?.handled === true) {
+              policyResult = candidate;
+              break;
+            }
+          } catch (error) {
+            console.warn(`[tools] message.send-policy 失败，回退原始发送：${error?.message ?? error}`);
+          }
+        }
+
+        if (policyResult) {
+          const queued = Array.isArray(policyResult.sent)
+            ? policyResult.sent
+            : messages.map((text) => ({ text, messageId: null, queued: true }));
+          ctx.session.sent.push(...queued.map((item) => ({
+            type: 'text',
+            text: item.text,
+            at: item.at || new Date().toISOString(),
+            queued: true
+          })));
+          ctx.emit('session-update', ctx.session.id);
+          return ok({
+            queued: queued.length,
+            note: policyResult.note || '已加入定时回复队列，稍后会合并发送。'
+          });
+        }
+
+        const result = await ctx.sender.sendTextBatch(ctx.chatKey, messages, sendOptions);
         ctx.session.sent.push(...result.sent.map((s) => ({ type: 'text', text: s.text, at: s.at })));
         ctx.emit('session-update', ctx.session.id);
         const note = ['已发送。不要输出"已发送"类汇报，继续思考下一步或直接结束。'];

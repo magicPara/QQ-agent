@@ -906,6 +906,9 @@ export class Orchestrator {
 
     const ctx = {
       chatKey, kind, chatId,
+      // 当前会话本轮触发消息。普通工具不会依赖它；发送策略插件可用它
+      // 在延迟合并后继续 @ 实际触发回复的群友。
+      triggerEntries,
       selfId: this.onebot.selfId,
       selfNickname,
       botName: cfg.persona.botName,

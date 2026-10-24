@@ -321,25 +321,31 @@ export class OneBotClient {
    * 另外两处就会悄悄漂移（历史教训：sendText 修过"消息 id 可为负数"，
    * 另外两处当时各带着同样的旧正则）。这里统一三个约定：
    *   · replyToMessageId：非零整数（消息 id 可为负数；空串=不引用）
-   *   · atUserId：正整数 QQ 号，禁止 "all"（全体成员用 CQ 码自己拼，不经此路径）
+   *   · atUserId / atUserIds：正整数 QQ 号，禁止 "all"（全体成员用 CQ 码自己拼，不经此路径）
    */
-  static #replyAtSegments({ replyToMessageId = null, atUserId = null } = {}) {
+  static #replyAtSegments({ replyToMessageId = null, atUserId = null, atUserIds = null } = {}) {
     const segments = [];
     if (replyToMessageId !== undefined && replyToMessageId !== null && String(replyToMessageId).trim() !== '') {
       const rid = String(replyToMessageId).trim();
       if (!/^-?[1-9]\d*$/.test(rid)) throw new Error('replyToMessageId 必须是非零整数（消息 id 可能为负数）');
       segments.push({ type: 'reply', data: { id: rid } });
     }
-    if (atUserId !== undefined && atUserId !== null && String(atUserId).trim() !== '') {
-      const at = String(atUserId).trim();
+    const rawAts = [];
+    if (Array.isArray(atUserIds)) rawAts.push(...atUserIds);
+    if (atUserId !== undefined && atUserId !== null && String(atUserId).trim() !== '') rawAts.unshift(atUserId);
+    const seenAts = new Set();
+    for (const rawAt of rawAts) {
+      const at = String(rawAt ?? '').trim();
+      if (!at || seenAts.has(at)) continue;
       if (!/^\d+$/.test(at)) throw new Error('atUserId 必须是正整数 QQ 号，且不能为 all');
+      seenAts.add(at);
       segments.push({ type: 'at', data: { qq: at } });
     }
     return segments;
   }
 
-  async sendText(kind, id, text, { replyToMessageId = null, atUserId = null } = {}) {
-    const segments = OneBotClient.#replyAtSegments({ replyToMessageId, atUserId });
+  async sendText(kind, id, text, { replyToMessageId = null, atUserId = null, atUserIds = null } = {}) {
+    const segments = OneBotClient.#replyAtSegments({ replyToMessageId, atUserId, atUserIds });
     segments.push({ type: 'text', data: { text: escapeCqText(String(text ?? '')) } });
     return this.sendSegments(kind, id, segments);
   }
