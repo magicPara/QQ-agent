@@ -344,7 +344,24 @@ export class OneBotClient {
     return segments;
   }
 
-  async sendText(kind, id, text, { replyToMessageId = null, atUserId = null, atUserIds = null } = {}) {
+  /** 构造一条消息内的多段「@某人 + 回复」，段落之间用空行分隔。 */
+  static #replyBlocksSegments({ replyToMessageId = null, blocks = [] } = {}) {
+    const segments = [];
+    segments.push(...OneBotClient.#replyAtSegments({ replyToMessageId }));
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i] || {};
+      if (i > 0) segments.push({ type: 'text', data: { text: '\n\n' } });
+      segments.push(...OneBotClient.#replyAtSegments({ atUserIds: block.atUserIds }).filter((s) => s.type === 'at'));
+      const text = String(block.text ?? '');
+      if (text) segments.push({ type: 'text', data: { text: escapeCqText(text) } });
+    }
+    return segments;
+  }
+
+  async sendText(kind, id, text, { replyToMessageId = null, atUserId = null, atUserIds = null, atUserIdsByText = null } = {}) {
+    if (Array.isArray(atUserIdsByText) && atUserIdsByText.length) {
+      return this.sendSegments(kind, id, OneBotClient.#replyBlocksSegments({ replyToMessageId, blocks: atUserIdsByText }));
+    }
     const segments = OneBotClient.#replyAtSegments({ replyToMessageId, atUserId, atUserIds });
     segments.push({ type: 'text', data: { text: escapeCqText(String(text ?? '')) } });
     return this.sendSegments(kind, id, segments);

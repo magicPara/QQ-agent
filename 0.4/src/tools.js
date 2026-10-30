@@ -159,13 +159,13 @@ function registerAllTools() {
   registerTool({
     id: 'send_message',
     name: '发送消息',
-    description: '发送消息到当前聊天（本工具只能发到本次会话对应的群/私聊；要发到别处用 send_to）。messages 传字符串=发一条；传字符串数组=分多条发送（推荐，更像真人）。只有需要明确"我回的是哪条"时才传 replyToMessageId 引用；需要点名某人才传 atUserId。不要在字符串内部用空格分句。',
+    description: '发送消息到当前聊天。每次调用只回复同一位收件人；回复多人时，分别调用并用 atUserId 明确各人的 QQ 号，或用 replyToMessageId 引用对方消息。字符串数组只是对同一人的多段内容，不能按顺序配对不同的人。',
     category: 'messaging',
     icon: '💬',
     parameters: {
       type: 'object',
       properties: {
-        messages: { description: '要发送的内容：字符串=一条；数组=分多条', oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+        messages: { description: '回复同一收件人的文本或多段文本；回复不同人请分别调用并指定 QQ 号', oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
         replyToMessageId: { type: ['integer', 'string'], description: '要引用/回复的消息 id（聊天记录里每条消息前的 #数字，可选）' },
         atUserId: { type: ['integer', 'string'], description: '要 @ 的群成员 QQ 号（可选，与引用二选一，不要滥用）' }
       },
@@ -196,6 +196,8 @@ function registerAllTools() {
               chatId: ctx.chatId,
               selfId: ctx.selfId,
               triggerEntries: ctx.triggerEntries || [],
+              replyEntry: sendOptions.replyToMessageId != null
+                ? ctx.store?.findByMid?.(ctx.chatKey, sendOptions.replyToMessageId) ?? null : null,
               messages,
               options: sendOptions,
               // 只暴露当前会话绑定的发送入口。插件不能借此改变目标会话。
@@ -211,6 +213,7 @@ function registerAllTools() {
         }
 
         if (policyResult) {
+          if (policyResult.error) return err(String(policyResult.error));
           const queued = Array.isArray(policyResult.sent)
             ? policyResult.sent
             : messages.map((text) => ({ text, messageId: null, queued: true }));

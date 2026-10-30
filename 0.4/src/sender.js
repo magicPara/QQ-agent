@@ -130,7 +130,7 @@ export class SendQueue {
 
   /**
    * 发送一批文本消息（一条或多条）。
-   * options: { replyToMessageId, atUserId, atUserIds }
+   * options: { replyToMessageId, atUserId, atUserIds, atUserIdsByText }
    * 返回 { sent: [{text, messageId}], failed: [{text, error}] }；全部失败时抛错。
    */
   async sendTextBatch(chatKey, messages, options = {}) {
@@ -168,7 +168,8 @@ export class SendQueue {
         const data = await this.onebot.sendText(kind, id, text, {
           replyToMessageId: i === 0 ? options.replyToMessageId : null, // 引用挂在第一条上：回的就是那条
           atUserId: i === 0 ? options.atUserId : null,
-          atUserIds: i === 0 ? options.atUserIds : null
+          atUserIds: i === 0 ? options.atUserIds : null,
+          atUserIdsByText: i === 0 && parts.length === 1 ? options.atUserIdsByText : null
         });
         this.#markSent(chatKey, text);   // 只有 OneBot 成功返回后才记入去重窗口
         const ts = Date.now();
